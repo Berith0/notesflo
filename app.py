@@ -1,3 +1,5 @@
+# SCRIPT BY LUCAS LENAERTS
+
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import threading
