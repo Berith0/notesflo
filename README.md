@@ -29,3 +29,5 @@ les bibliothèques suivantes :
 - requests
 - bs4 (BeautifulSoup)
 - reportlab
+
+Ce code est protégé par des droits d'auteurs (lire le fichier LICENSE).
