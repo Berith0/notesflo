@@ -1,29 +1,59 @@
-import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
-import threading
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import re
-import json
-import os
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+'''
+MIT License
 
-# --- Paramètres et URL ---
-BASE_URL = "https://appsemflo.be"
-LOGIN_URL = BASE_URL + "/login"
-COURSES_URL = BASE_URL + "/carnet-de-notes"
+Copyright (c) 2025 Lucas Lenaerts
 
-session = None
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-# Fonctions de connexion et de scraping
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
+
+# Secure storage library for credentials
+import keyring
+
+import ttkbootstrap as ttk              # For enhanced Tkinter styling
+from ttkbootstrap.constants import *   # Predefined styling constants
+import threading                        # To run tasks in background threads
+import requests                         # For HTTP requests
+from bs4 import BeautifulSoup           # For parsing HTML pages
+from datetime import datetime           # For date/time operations
+import re                               # Regular expressions for URL/score parsing
+import json                             # For configuration file read/write
+import os                               # For OS-level functions
+import matplotlib.pyplot as plt         # For plotting charts
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # To embed matplotlib charts in Tkinter
+import tkinter as tk                    # Tkinter core library for GUI
+from tkinter import filedialog, messagebox  # For dialogs in Tkinter
+from reportlab.lib.pagesizes import letter  # For PDF page sizes
+from reportlab.pdfgen import canvas     # For PDF generation
+
+# --- URL and Global Variables ---
+BASE_URL = "https://appsemflo.be"      # Base URL of the remote server
+LOGIN_URL = BASE_URL + "/login"        # URL used for user login
+COURSES_URL = BASE_URL + "/carnet-de-notes"  # URL used to retrieve the courses list
+
+session = None  # Global HTTP session variable
+
+# --- Functions for Networking and Scraping ---
+
 def get_csrf_token(sess):
-    """Récupère le token CSRF depuis la page de connexion."""
+    """
+    Retrieve the CSRF token from the login page.
+    """
     try:
         response = sess.get(LOGIN_URL)
         if response.status_code == 200:
@@ -36,7 +66,9 @@ def get_csrf_token(sess):
     return None
 
 def login_request(username, password):
-    """Tente de se connecter et retourne la session active si la connexion réussit."""
+    """
+    Attempt to log in with the provided credentials.
+    """
     s = requests.Session()
     csrf_token = get_csrf_token(s)
     if not csrf_token:
@@ -48,12 +80,15 @@ def login_request(username, password):
         "_remember_me": "on"
     }
     response = s.post(LOGIN_URL, data=data)
+    # Check login success by the presence of a logout string in the response
     if response.status_code == 200 and "Se déconnecter" in response.text:
         return s
     return None
 
 def fetch_courses():
-    """Télécharge la page contenant la liste des cours."""
+    """
+    Fetch the courses page HTML.
+    """
     global session
     if session is None:
         return None
@@ -64,11 +99,11 @@ def fetch_courses():
 
 def parse_courses(html):
     """
-    Extrait la liste des cours depuis la page HTML.
-    Chaque cours est représenté par un dictionnaire contenant :
-      - course : le nom du cours
-      - teacher : l'enseignant
-      - url : l'URL complète vers le carnet de notes (incluant la période, ex. .../p2)
+    Parse the courses page HTML and extract course details.
+    Each course is represented as a dictionary with keys:
+      - course: course name
+      - teacher: teacher name
+      - url: complete URL to the gradebook page for the course
     """
     soup = BeautifulSoup(html, "html.parser")
     courses = []
@@ -91,7 +126,9 @@ def parse_courses(html):
     return courses
 
 def fetch_notes(url):
-    """Télécharge la page du carnet de notes pour un cours donné."""
+    """
+    Fetch the gradebook page for a given course URL.
+    """
     global session
     if session is None:
         return None
@@ -102,12 +139,12 @@ def fetch_notes(url):
 
 def parse_notes(html):
     """
-    Extrait les notes depuis la page du carnet de notes.
-    Pour chaque ligne (hors entête), on récupère :
-      - title : le titre du test ou devoir
-      - date : la date (convertie en objet datetime)
-      - score : la note obtenue
-      - max_score : la note maximale
+    Parse the gradebook page HTML to extract grade entries.
+    Each note is a dictionary containing:
+      - title: title of the test/assignment
+      - date: the date (converted to a datetime object)
+      - score: the obtained score
+      - max_score: the maximum possible score
     """
     soup = BeautifulSoup(html, "html.parser")
     notes = []
@@ -143,9 +180,8 @@ def parse_notes(html):
 
 def update_period_url(url, delta):
     """
-    Recherche dans l'URL le paramètre de période de la forme 'pX'
-    et retourne une nouvelle URL avec X modifié par delta.
-    Si aucun paramètre n'est trouvé, ajoute par défaut 'p1'.
+    Update the period parameter in the URL by delta.
+    Returns a tuple (new_url, new_period).
     """
     match = re.search(r'/p(\d+)', url)
     if match:
@@ -158,45 +194,72 @@ def update_period_url(url, delta):
     else:
         return url + "/p1", 1
 
-# Interface Graphique avec ttkbootstrap
+# --- Graphical User Interface using ttkbootstrap ---
 class App(ttk.Window):
     def __init__(self):
+        # Initialize the main window with a flatly theme
         super().__init__(themename="flatly")
         self.title("Carnet de Notes")
         self.geometry("1200x800")
-        self.session = None
-        self.courses = []
-        self.selected_course = None
-        self.notes = []
-        self.current_period = None
-        self.full_titles = {}
-        self.exam_keys = {}
-        self.user_email = ""
-        self.ignored_exams = set()
-        self.create_login_frame()
-        self.load_saved_credentials()
+        self.session = None          # User session after successful login
+        self.courses = []            # List of courses data
+        self.selected_course = None  # Currently selected course
+        self.notes = []              # List of notes for the selected course
+        self.current_period = None   # Current period being viewed
+        self.full_titles = {}        # Mapping for full note titles (used in tooltips)
+        self.exam_keys = {}          # Unique keys for each exam (for ignore feature)
+        self.user_email = ""         # Email of the logged in user
+        self.ignored_exams = set()   # Set of exam keys that are ignored
+        self.export_frame = None     # Frame for export functionality (integrated in main window)
+        self.create_login_frame()    # Start with login frame
+        self.load_saved_credentials()  # Load saved credentials (if any)
 
+    # --- Credential Storage with Keyring ---
     def load_saved_credentials(self):
+        """
+        Load saved email from config.json and retrieve the password securely from keyring.
+        """
         try:
             with open("config.json", "r") as f:
                 config = json.load(f)
                 email = config.get("email", "")
-                password = config.get("password", "")
-                if email and password:
-                    self.email_var.set(email)
-                    self.password_var.set(password)
-                    self.remember_var.set(True)
+                if email:
+                    password = keyring.get_password("CarnetDeNotesApp", email)
+                    if password:
+                        self.email_var.set(email)
+                        self.password_var.set(password)
+                        self.remember_var.set(True)
         except Exception:
             pass
 
     def save_credentials(self, email, password):
+        """
+        Save the email to config.json and store the password securely using keyring.
+        """
         try:
             with open("config.json", "w") as f:
-                json.dump({"email": email, "password": password}, f)
+                json.dump({"email": email}, f)
+            keyring.set_password("CarnetDeNotesApp", email, password)
         except Exception as e:
             print("Erreur lors de l'enregistrement des identifiants:", e)
 
+    def remove_credentials(self, email):
+        """
+        Remove stored credentials (both config file and keyring).
+        """
+        try:
+            if os.path.exists("config.json"):
+                os.remove("config.json")
+            keyring.delete_password("CarnetDeNotesApp", email)
+        except Exception:
+            pass
+
+    # --- End of Credential Storage ---
+
     def load_ignored_exams(self):
+        """
+        Load the list of ignored exams from a user-specific JSON file.
+        """
         filename = f"ignored_exams_{self.user_email}.json"
         try:
             with open(filename, "r") as f:
@@ -206,6 +269,9 @@ class App(ttk.Window):
             self.ignored_exams = set()
 
     def save_ignored_exams(self):
+        """
+        Save the list of ignored exams to a user-specific JSON file.
+        """
         filename = f"ignored_exams_{self.user_email}.json"
         try:
             with open(filename, "w") as f:
@@ -214,6 +280,9 @@ class App(ttk.Window):
             print("Erreur lors de la sauvegarde des interros ignorées:", e)
 
     def create_login_frame(self):
+        """
+        Create and display the login frame where the user inputs credentials.
+        """
         self.login_frame = ttk.Frame(self, padding=20)
         self.login_frame.pack(expand=TRUE, fill=BOTH)
         title_label = ttk.Label(self.login_frame, text="Bienvenue", font=("Helvetica", 24, "bold"))
@@ -237,6 +306,9 @@ class App(ttk.Window):
         self.status_label.pack(pady=5)
 
     def handle_login(self):
+        """
+        Handle the login process when the user clicks the login button.
+        """
         email = self.email_var.get().strip()
         password = self.password_var.get().strip()
         if not email or not password:
@@ -255,10 +327,7 @@ class App(ttk.Window):
                 if self.remember_var.get():
                     self.save_credentials(email, password)
                 else:
-                    try:
-                        os.remove("config.json")
-                    except Exception:
-                        pass
+                    self.remove_credentials(email)
                 self.after(500, self.show_main_interface)
             else:
                 self.status_label.config(text="Échec de la connexion.")
@@ -266,22 +335,30 @@ class App(ttk.Window):
         threading.Thread(target=login_thread).start()
 
     def show_main_interface(self):
+        """
+        Transition from the login frame to the main interface.
+        """
         self.login_frame.destroy()
         self.create_main_interface()
         self.load_ignored_exams()
         self.load_courses()
 
     def create_main_interface(self):
+        """
+        Create the main interface layout with header, sidebar, and content area.
+        """
         header_frame = ttk.Frame(self, padding=10)
         header_frame.pack(fill=X)
         title = ttk.Label(header_frame, text="Carnet de Notes", font=("Helvetica", 20, "bold"))
         title.pack(side=LEFT, padx=5)
         logout_btn = ttk.Button(header_frame, text="Déconnexion", command=self.logout, bootstyle=DANGER)
         logout_btn.pack(side=RIGHT, padx=5)
-        export_btn = ttk.Button(header_frame, text="Exporter en PDF", command=self.open_export_window, bootstyle=PRIMARY)
+        # Export button now calls the export panel (integrated into the main window)
+        export_btn = ttk.Button(header_frame, text="Exporter en PDF", command=self.open_export_panel, bootstyle=PRIMARY)
         export_btn.pack(side=RIGHT, padx=5)
         self.main_paned = ttk.Panedwindow(self, orient=HORIZONTAL)
         self.main_paned.pack(expand=TRUE, fill=BOTH, padx=10, pady=10)
+        # Sidebar: list of courses
         self.sidebar = ttk.Frame(self.main_paned, padding=10)
         self.main_paned.add(self.sidebar, weight=1)
         sidebar_title = ttk.Label(self.sidebar, text="Liste des cours", font=("Helvetica", 16))
@@ -295,6 +372,7 @@ class App(ttk.Window):
         self.course_tree.column("teacher", anchor="center")
         self.course_tree.pack(expand=TRUE, fill=BOTH, pady=5)
         self.course_tree.bind("<<TreeviewSelect>>", self.on_course_select)
+        # Main content: notes and chart
         self.content = ttk.Frame(self.main_paned, padding=10)
         self.main_paned.add(self.content, weight=3)
         top_content = ttk.Frame(self.content)
@@ -328,6 +406,9 @@ class App(ttk.Window):
         self.chart_frame.pack(expand=TRUE, fill=BOTH, pady=5)
 
     def logout(self):
+        """
+        Logout by clearing session and showing the login frame.
+        """
         self.session = None
         self.courses = []
         self.selected_course = None
@@ -338,6 +419,9 @@ class App(ttk.Window):
         self.load_saved_credentials()
 
     def load_courses(self):
+        """
+        Load the list of courses by fetching and parsing the courses page.
+        """
         if not self.session:
             messagebox.show_error("Erreur", "Connectez-vous d'abord.")
             return
@@ -353,6 +437,9 @@ class App(ttk.Window):
         threading.Thread(target=thread_load).start()
 
     def on_course_select(self, event):
+        """
+        When a course is selected, load its associated notes.
+        """
         selected = self.course_tree.focus()
         if selected:
             url = self.course_tree.item(selected, "tags")[0]
@@ -366,12 +453,18 @@ class App(ttk.Window):
             self.load_notes()
 
     def extract_period(self, url):
+        """
+        Extract the period number from the URL (e.g., "/p1").
+        """
         match = re.search(r'/p(\d+)', url)
         if match:
             return int(match.group(1))
         return 1
 
     def change_period(self, delta):
+        """
+        Change the current period by delta (e.g., previous or next period).
+        """
         if not self.selected_course:
             messagebox.show_error("Erreur", "Sélectionnez un cours dans la liste.")
             return
@@ -382,6 +475,9 @@ class App(ttk.Window):
         self.load_notes()
 
     def load_total_notes(self):
+        """
+        Load and combine notes from all periods.
+        """
         if not self.selected_course:
             messagebox.show_error("Erreur", "Sélectionnez un cours dans la liste.")
             return
@@ -398,6 +494,9 @@ class App(ttk.Window):
         threading.Thread(target=thread_load_total).start()
 
     def load_notes(self):
+        """
+        Load the notes for the selected course and current period.
+        """
         if not self.selected_course:
             messagebox.show_error("Erreur", "Sélectionnez un cours dans la liste.")
             return
@@ -412,11 +511,17 @@ class App(ttk.Window):
         threading.Thread(target=thread_load_notes).start()
 
     def handle_loaded_notes(self, notes):
+        """
+        Update the UI with the loaded notes and update the chart.
+        """
         self.notes = notes
         self.update_notes_tree()
         self.plot_chart()
 
     def update_notes_tree(self):
+        """
+        Update the notes treeview with new data and compute the average.
+        """
         self.note_tree.delete(*self.note_tree.get_children())
         self.full_titles = {}
         self.exam_keys = {}
@@ -458,6 +563,9 @@ class App(ttk.Window):
             self.avg_label.config(text="Moyenne actuelle : -", foreground="black")
 
     def on_note_tree_motion(self, event):
+        """
+        Display tooltips for long titles in the notes treeview.
+        """
         region = self.note_tree.identify("region", event.x, event.y)
         if region == "cell":
             col = self.note_tree.identify_column(event.x)
@@ -474,9 +582,15 @@ class App(ttk.Window):
             self.hide_tooltip()
 
     def on_note_tree_leave(self, event):
+        """
+        Hide the tooltip when leaving the treeview.
+        """
         self.hide_tooltip()
 
     def show_tooltip(self, event, text):
+        """
+        Show a tooltip with the full title near the mouse pointer.
+        """
         if not hasattr(self, "tooltip"):
             self.tooltip = tk.Toplevel(self.note_tree)
             self.tooltip.wm_overrideredirect(True)
@@ -491,10 +605,16 @@ class App(ttk.Window):
         self.tooltip.deiconify()
 
     def hide_tooltip(self):
+        """
+        Hide the tooltip.
+        """
         if hasattr(self, "tooltip"):
             self.tooltip.withdraw()
 
     def on_note_tree_right_click(self, event):
+        """
+        Show a context menu to ignore or include an exam.
+        """
         item = self.note_tree.identify_row(event.y)
         if not item:
             return
@@ -512,6 +632,9 @@ class App(ttk.Window):
             menu.grab_release()
 
     def toggle_ignore_exam(self, item, exam_key):
+        """
+        Toggle the ignored status for a specific exam.
+        """
         if exam_key in self.ignored_exams:
             self.ignored_exams.remove(exam_key)
         else:
@@ -521,6 +644,9 @@ class App(ttk.Window):
         self.plot_chart()
 
     def plot_chart(self):
+        """
+        Plot the evolution of grades using matplotlib and embed the chart in the UI.
+        """
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
         valid_notes = [n for n in self.notes if n["date"] and n["score"] is not None and n["max_score"] and
@@ -551,44 +677,74 @@ class App(ttk.Window):
         canvas.draw()
         canvas.get_tk_widget().pack(expand=TRUE, fill=BOTH)
 
-    # Fonctionnalité d'export PDF
-    def open_export_window(self):
-        export_window = ttk.Toplevel(self)
-        export_window.title("Exporter le rapport PDF")
-        export_window.geometry("400x400")
-        
-        courses_frame = ttk.Frame(export_window, padding=10)
+    # --- Export Panel (Integrated into Main Window) ---
+    def open_export_panel(self):
+        """
+        Show the export panel inside the main window.
+        Hides the main content (paned window) and displays export options.
+        """
+        # Hide the main content pane
+        self.main_paned.pack_forget()
+
+        # Create an export frame to cover the main window
+        self.export_frame = ttk.Frame(self, padding=20)
+        self.export_frame.pack(expand=TRUE, fill=BOTH)
+
+        # Export panel header
+        header = ttk.Label(self.export_frame, text="Exporter le rapport PDF", font=("Helvetica", 20, "bold"))
+        header.pack(pady=10)
+
+        # Frame for selecting courses to export
+        courses_frame = ttk.Frame(self.export_frame, padding=10)
         courses_frame.pack(fill="both", expand=True)
         ttk.Label(courses_frame, text="Sélectionnez les cours à inclure :", font=("Helvetica", 12, "bold")).pack(anchor="w")
-        
         self.export_course_vars = {}
         for course in self.courses:
             var = tk.BooleanVar(value=True)
             chk = ttk.Checkbutton(courses_frame, text=f"{course['course']} - {course['teacher']}", variable=var)
             chk.pack(anchor="w")
             self.export_course_vars[course["course"]] = (var, course)
-        
-        period_frame = ttk.Frame(export_window, padding=10)
+
+        # Frame for period selection
+        period_frame = ttk.Frame(self.export_frame, padding=10)
         period_frame.pack(fill="x")
         ttk.Label(period_frame, text="Sélectionnez la période :", font=("Helvetica", 12, "bold")).pack(anchor="w")
         self.period_export_var = ttk.StringVar(value="Total")
         period_options = ["Période 1", "Période 2", "Période 3", "Total"]
         period_dropdown = ttk.Combobox(period_frame, textvariable=self.period_export_var, values=period_options, state="readonly")
         period_dropdown.pack(fill="x", padx=5, pady=5)
-        
-        export_btn = ttk.Button(export_window, text="Exporter en PDF", command=lambda: self.generate_pdf_report(export_window))
-        export_btn.pack(pady=20)
 
-    def generate_pdf_report(self, window):
+        # Frame for action buttons (Export / Annuler)
+        action_frame = ttk.Frame(self.export_frame, padding=10)
+        action_frame.pack(pady=20)
+        export_btn = ttk.Button(action_frame, text="Exporter en PDF", command=self.start_pdf_export, bootstyle=PRIMARY)
+        export_btn.pack(side=LEFT, padx=5)
+        cancel_btn = ttk.Button(action_frame, text="Annuler", command=self.close_export_panel, bootstyle=DANGER)
+        cancel_btn.pack(side=LEFT, padx=5)
+
+    def close_export_panel(self):
+        """
+        Close the export panel and restore the main content.
+        """
+        if self.export_frame:
+            self.export_frame.destroy()
+            self.export_frame = None
+        self.main_paned.pack(expand=TRUE, fill=BOTH, padx=10, pady=10)
+
+    def start_pdf_export(self):
+        """
+        Start the PDF export process after the user clicks the Export button.
+        Ask the user for the save location, then show a waiting message while exporting.
+        """
         selected_courses = []
         for key, (var, course) in self.export_course_vars.items():
             if var.get():
                 selected_courses.append(course)
-        
         period = self.period_export_var.get()
-        
+
+        # Ask user for the file save location using a file dialog
         downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
-        default_filename = f"Rapport de notes_{self.user_email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        default_filename = f"Rapport_de_notes_{self.user_email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         file_path = filedialog.asksaveasfilename(initialdir=downloads_folder,
                                                  initialfile=default_filename,
                                                  defaultextension=".pdf",
@@ -596,104 +752,140 @@ class App(ttk.Window):
                                                  title="Enregistrer le rapport PDF")
         if not file_path:
             return
-        
-        c = canvas.Canvas(file_path, pagesize=letter)
-        width, height = letter
-        y = height - 50
 
-        c.setFont("Helvetica-Bold", 20)
-        c.drawCentredString(width/2, y, "Rapport de Notes")
-        y -= 40
-        c.setFont("Helvetica", 14)
-        c.drawCentredString(width/2, y, f"Période: {period}")
-        y -= 40
+        # Clear export panel and show a waiting message
+        for widget in self.export_frame.winfo_children():
+            widget.destroy()
+        waiting_label = ttk.Label(self.export_frame, text="Veuillez patienter pendant la création du PDF...", font=("Helvetica", 12))
+        waiting_label.pack(pady=20)
 
-        for course in selected_courses:
-            c.setFont("Helvetica-Bold", 16)
-            c.drawString(50, y, f"Cours: {course['course']} - {course['teacher']}")
-            y -= 25
-            
-            if period == "Total":
-                base_url = re.sub(r'/p\d+', '', course["url"])
-                notes = []
-                for p in [1, 2, 3]:
-                    url = f"{base_url}/p{p}"
-                    html = fetch_notes(url)
-                    if html:
-                        notes.extend(parse_notes(html))
-            else:
-                p = int(period.split()[-1])
-                new_url, _ = update_period_url(course["url"], p - self.extract_period(course["url"]))
-                html = fetch_notes(new_url)
-                notes = parse_notes(html) if html else []
-            
-            if not notes:
-                c.setFont("Helvetica-Oblique", 12)
-                c.drawString(70, y, "Aucune note disponible.")
-                y -= 20
-            else:
-                c.setFont("Helvetica-Bold", 12)
-                c.drawString(50, y, "Date")
-                c.drawString(120, y, "Titre")
-                c.drawString(450, y, "Note")
-                y -= 20
-                c.setFont("Helvetica", 12)
-                total = 0
-                count = 0
-                graph_data = []
-                for note in notes:
-                    date_str = note["date"].strftime("%d/%m/%Y") if note["date"] else ""
-                    title = note["title"] if len(note["title"]) <= 50 else note["title"][:50] + "..."
-                    note_str = f"{note['score']}/{note['max_score']}" if note["score"] is not None and note["max_score"] is not None else ""
-                    c.drawString(50, y, date_str)
-                    c.drawString(120, y, title)
-                    c.drawString(450, y, note_str)
-                    y -= 20
-                    if note["score"] is not None and note["max_score"] is not None:
-                        val = note["score"] / note["max_score"] * 100
-                        total += val
-                        count += 1
-                        graph_data.append((note["date"], val))
+        def pdf_export_task():
+            try:
+                c = canvas.Canvas(file_path, pagesize=letter)
+                width, height = letter
+                y = height - 50
+
+                c.setFont("Helvetica-Bold", 20)
+                c.drawCentredString(width/2, y, "Rapport de Notes")
+                y -= 40
+                c.setFont("Helvetica", 14)
+                c.drawCentredString(width/2, y, f"Période: {period}")
+                y -= 40
+
+                # Iterate over each selected course
+                for course in selected_courses:
+                    c.setFont("Helvetica-Bold", 16)
+                    c.drawString(50, y, f"Cours: {course['course']} - {course['teacher']}")
+                    y -= 25
+
+                    # Retrieve notes based on the selected period
+                    if period == "Total":
+                        base_url = re.sub(r'/p\d+', '', course["url"])
+                        notes = []
+                        for p in [1, 2, 3]:
+                            url = f"{base_url}/p{p}"
+                            html = fetch_notes(url)
+                            if html:
+                                notes.extend(parse_notes(html))
+                    else:
+                        p = int(period.split()[-1])
+                        new_url, _ = update_period_url(course["url"], p - self.extract_period(course["url"]))
+                        html = fetch_notes(new_url)
+                        notes = parse_notes(html) if html else []
+
+                    if not notes:
+                        c.setFont("Helvetica-Oblique", 12)
+                        c.drawString(70, y, "Aucune note disponible.")
+                        y -= 20
+                    else:
+                        c.setFont("Helvetica-Bold", 12)
+                        c.drawString(50, y, "Date")
+                        c.drawString(120, y, "Titre")
+                        c.drawString(450, y, "Note")
+                        y -= 20
+                        c.setFont("Helvetica", 12)
+                        total = 0
+                        count = 0
+                        graph_data = []
+                        for note in notes:
+                            date_str = note["date"].strftime("%d/%m/%Y") if note["date"] else ""
+                            title = note["title"] if len(note["title"]) <= 50 else note["title"][:50] + "..."
+                            note_str = f"{note['score']}/{note['max_score']}" if note["score"] is not None and note["max_score"] is not None else ""
+                            c.drawString(50, y, date_str)
+                            c.drawString(120, y, title)
+                            c.drawString(450, y, note_str)
+                            y -= 20
+                            if note["score"] is not None and note["max_score"] is not None:
+                                val = note["score"] / note["max_score"] * 100
+                                total += val
+                                count += 1
+                                graph_data.append((note["date"], val))
+                            if y < 100:
+                                c.showPage()
+                                y = height - 50
+                        if count > 0:
+                            avg = total / count
+                            c.setFont("Helvetica-Bold", 12)
+                            c.drawString(50, y, f"Moyenne: {avg:.1f}%")
+                            y -= 30
+                        if graph_data:
+                            graph_data.sort(key=lambda x: x[0])
+                            dates, values = zip(*graph_data)
+                            cum_avg = []
+                            running = 0
+                            for i, v in enumerate(values):
+                                running += v
+                                cum_avg.append(running / (i + 1))
+                            fig, ax = plt.subplots(figsize=(5, 3))
+                            ax.plot(dates, values, marker='o', linestyle='-', label="Note individuelle")
+                            ax.plot(dates, cum_avg, marker='', linestyle='--', color='red', label="Moyenne cumulée")
+                            ax.set_title("Évolution des notes")
+                            ax.set_xlabel("Date")
+                            ax.set_ylabel("Pourcentage")
+                            ax.set_ylim(0, 110)
+                            ax.legend()
+                            ax.grid(True, linestyle="--", alpha=0.5)
+                            fig.autofmt_xdate()
+                            temp_img = "temp_chart.png"
+                            fig.savefig(temp_img, dpi=100)
+                            plt.close(fig)
+                            c.drawImage(temp_img, 50, y-200, width=500, height=200)
+                            y -= 220
+                            os.remove(temp_img)
+                    y -= 30
                     if y < 100:
                         c.showPage()
                         y = height - 50
-                if count > 0:
-                    avg = total / count
-                    c.setFont("Helvetica-Bold", 12)
-                    c.drawString(50, y, f"Moyenne: {avg:.1f}%")
-                    y -= 30
-                if graph_data:
-                    graph_data.sort(key=lambda x: x[0])
-                    dates, values = zip(*graph_data)
-                    cum_avg = []
-                    running = 0
-                    for i, v in enumerate(values):
-                        running += v
-                        cum_avg.append(running / (i + 1))
-                    fig, ax = plt.subplots(figsize=(5, 3))
-                    ax.plot(dates, values, marker='o', linestyle='-', label="Note individuelle")
-                    ax.plot(dates, cum_avg, marker='', linestyle='--', color='red', label="Moyenne cumulée")
-                    ax.set_title("Évolution des notes")
-                    ax.set_xlabel("Date")
-                    ax.set_ylabel("Pourcentage")
-                    ax.set_ylim(0, 110)
-                    ax.legend()
-                    ax.grid(True, linestyle="--", alpha=0.5)
-                    fig.autofmt_xdate()
-                    temp_img = "temp_chart.png"
-                    fig.savefig(temp_img, dpi=100)
-                    plt.close(fig)
-                    c.drawImage(temp_img, 50, y-200, width=500, height=200)
-                    y -= 220
-                    os.remove(temp_img)
-            y -= 30
-            if y < 100:
-                c.showPage()
-                y = height - 50
-        c.save()
-        messagebox.showinfo("Export PDF", f"Le rapport a été exporté sous le nom :\n{os.path.basename(file_path)}")
-        window.destroy()
+                c.save()
+                self.after(0, lambda: self.pdf_export_complete(file_path))
+            except Exception as e:
+                self.after(0, lambda: self.pdf_export_failed(str(e)))
+        
+        threading.Thread(target=pdf_export_task).start()
 
+    def pdf_export_complete(self, file_path):
+        """
+        Update the export panel after a successful PDF export.
+        """
+        for widget in self.export_frame.winfo_children():
+            widget.destroy()
+        success_label = ttk.Label(self.export_frame, text=f"Le rapport a été exporté avec succès sous :\n{os.path.basename(file_path)}", font=("Helvetica", 12))
+        success_label.pack(pady=20)
+        close_btn = ttk.Button(self.export_frame, text="Fermer", command=self.close_export_panel, bootstyle=PRIMARY)
+        close_btn.pack(pady=10)
+
+    def pdf_export_failed(self, error_message):
+        """
+        Update the export panel if PDF export fails.
+        """
+        for widget in self.export_frame.winfo_children():
+            widget.destroy()
+        error_label = ttk.Label(self.export_frame, text=f"Erreur lors de l'export du rapport:\n{error_message}", font=("Helvetica", 12), foreground="red")
+        error_label.pack(pady=20)
+        close_btn = ttk.Button(self.export_frame, text="Fermer", command=self.close_export_panel, bootstyle=DANGER)
+        close_btn.pack(pady=10)
+
+# --- Main Application Execution ---
 if __name__ == "__main__":
     app = App()
     app.mainloop()
