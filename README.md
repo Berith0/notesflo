@@ -1,27 +1,23 @@
-notesflo - présentation du projet
+notesflo - Project Overview
 
-Ce projet est une application permettant aux élèves de suivre leurs notes de manière claire et interactive.
-L'objectif est d'offrir une meilleure visibilité sur les performances scolaires grâce à des graphiques et des statistiques avancées.
+This project is an application that allows students to track their grades in a clear and interactive way.
+The goal is to provide better visibility into academic performance through advanced graphs and statistics.
 
-Fonctionnalités principales :
-Affichage des notes sous forme de liste et de graphique interactif.
-Calcul automatique de la moyenne, avec prise en compte ou exclusion de certaines notes (ex. : absences notées à 0).
-Affichage de la moyenne cumulée sur le graphique pour suivre l’évolution.
+*Main Features:*
+Display of grades in list and interactive graph format.
+Automatic calculation of the average, with inclusion or exclusion of certain grades (e.g., absences marked as 0).
+Display of the cumulative average on the graph to track progress.
 
-Exportation des résultats en PDF, incluant :
-Les notes détaillées
-Les graphiques
-La moyenne
-Sélection des cours et de la période souhaitée
+Export of results in PDF format, including: Detailed grades Graphs Average Selection of courses and desired period
 
-Comment ça fonctionne ?
-L'utilisateur se connecte avec ses identifiants de conexion et choisit un cours.
-Il consulte ses notes sous forme de liste et de graphique.
-Il peut exclure des évaluations de la moyenne si nécessaire.
-Il peut générer un rapport en PDF personnalisé.
+*How does it work?*
 
-L'application nécessite Python 3.12 ou une version ultérieure ainsi que 
-les bibliothèques suivantes :
+The user logs in with their login credentials and chooses a course.
+They view their grades in list and graph format.
+They can exclude assessments from the average if necessary.
+They can generate a personalized PDF report.
+
+*The application requires Python 3.12 or later and the following libraries:*
 
 - ttkbootstrap
 - matplotlib
@@ -30,4 +26,8 @@ les bibliothèques suivantes :
 - bs4 (BeautifulSoup)
 - reportlab
 
-Ce code est protégé par des droits d'auteurs (lire le fichier LICENSE).
+This code is protected by copyright (see the LICENSE file).
+
+![image](https://github.com/user-attachments/assets/864bb13a-f0cd-4d37-93b2-40e87f836ce3)
+![image](https://github.com/user-attachments/assets/318236fa-c83b-45ed-bafd-d9faabbd2c4b)
+![image](https://github.com/user-attachments/assets/63b79800-3caa-411a-8979-24d121f71c11)
