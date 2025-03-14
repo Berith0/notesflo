@@ -15,7 +15,17 @@ La moyenne
 Sélection des cours et de la période souhaitée
 
 Comment ça fonctionne ?
-L'utilisateur se connecte et choisit un cours.
+L'utilisateur se connecte avec ses identifiants de conexion et choisit un cours.
 Il consulte ses notes sous forme de liste et de graphique.
 Il peut exclure des évaluations de la moyenne si nécessaire.
 Il peut générer un rapport en PDF personnalisé.
+
+L'application nécessite Python 3.12 ou une version ultérieure ainsi que 
+les bibliothèques suivantes :
+
+- ttkbootstrap
+- matplotlib
+- fpdf
+- requests
+- bs4 (BeautifulSoup)
+- reportlab
